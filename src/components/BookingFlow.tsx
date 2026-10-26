@@ -3,17 +3,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { services, timeSlots, barberLocation, professionalName } from '@/data/barber';
-import { bookingIntervalsOverlap, type BookingInterval } from '@/lib/booking-time';
+import {
+  bookingIntervalsOverlap,
+  getSaoPauloDateRange,
+  isSaoPauloAppointmentInFuture,
+  type BookingInterval,
+} from '@/lib/booking-time';
 
 type BookingStep = 'service' | 'date' | 'time' | 'details' | 'confirmation';
 type OccupiedSlot = BookingInterval;
-
-const today = new Date();
-const nextDates = Array.from({ length: 7 }, (_, index) => {
-  const date = new Date(today);
-  date.setDate(today.getDate() + index + 1);
-  return date.toISOString().slice(0, 10);
-});
 
 const formSteps: { key: BookingStep; label: string }[] = [
   { key: 'service', label: 'Serviço' },
@@ -24,14 +22,16 @@ const formSteps: { key: BookingStep; label: string }[] = [
 ];
 
 const formatDate = (dateString: string) =>
-  new Date(`${dateString}T12:00:00`).toLocaleDateString('pt-BR', {
+  new Date(`${dateString}T12:00:00Z`).toLocaleDateString('pt-BR', {
+    timeZone: 'UTC',
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
   });
 
 const formatLabelDate = (dateString: string) =>
-  new Date(`${dateString}T12:00:00`).toLocaleDateString('pt-BR', {
+  new Date(`${dateString}T12:00:00Z`).toLocaleDateString('pt-BR', {
+    timeZone: 'UTC',
     weekday: 'short',
     day: '2-digit',
     month: 'short',
@@ -40,7 +40,9 @@ const formatLabelDate = (dateString: string) =>
 export function BookingFlow() {
   const [currentStep, setCurrentStep] = useState<BookingStep>('service');
   const [selectedServiceId, setSelectedServiceId] = useState(services[1].id);
-  const [selectedDate, setSelectedDate] = useState(nextDates[0]);
+  const [bookingDates, setBookingDates] = useState<string[]>([]);
+  const [now, setNow] = useState(() => new Date(0));
+  const [selectedDateValue, setSelectedDate] = useState('');
   const [selectedSlot, setSelectedSlot] = useState(timeSlots[1]);
   const [form, setForm] = useState({ name: '', phone: '', notes: '' });
   const [submitted, setSubmitted] = useState(false);
@@ -55,6 +57,9 @@ export function BookingFlow() {
     () => services.find((service) => service.id === selectedServiceId) ?? services[0],
     [selectedServiceId],
   );
+  const selectedDate = bookingDates.includes(selectedDateValue)
+    ? selectedDateValue
+    : bookingDates[0] ?? '';
 
   const currentIndex = formSteps.findIndex((step) => step.key === currentStep);
   const stepStatus = (stepKey: BookingStep) => currentStep === stepKey ? 'active' : currentIndex > formSteps.findIndex((step) => step.key === stepKey) ? 'done' : '';
@@ -66,10 +71,12 @@ export function BookingFlow() {
   ), [occupiedSlots, selectedDate, selectedService.duration]);
 
   const refreshAvailability = useCallback(async () => {
+    if (!bookingDates.length) return;
+
     try {
       const params = new URLSearchParams({
-        from: nextDates[0],
-        to: nextDates[nextDates.length - 1],
+        from: bookingDates[0],
+        to: bookingDates[bookingDates.length - 1],
       });
       const response = await fetch(`/api/bookings/availability?${params.toString()}`, { cache: 'no-store' });
       const payload = await response.json() as { occupied?: OccupiedSlot[]; message?: string };
@@ -85,9 +92,24 @@ export function BookingFlow() {
       setAvailabilityError(error instanceof Error ? error.message : 'Não foi possível carregar os horários.');
       setAvailabilityLoaded(false);
     }
+  }, [bookingDates]);
+
+  useEffect(() => {
+    const updateLocalDate = () => {
+      const currentDate = new Date();
+      const dates = getSaoPauloDateRange(7, currentDate);
+      setNow(currentDate);
+      setBookingDates((current) => current[0] === dates[0] ? current : dates);
+    };
+
+    updateLocalDate();
+    const timer = window.setInterval(updateLocalDate, 60000);
+    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
+    if (!bookingDates.length) return;
+
     const initialRefresh = window.setTimeout(() => void refreshAvailability(), 0);
     const timer = window.setInterval(() => void refreshAvailability(), 15000);
     const refreshOnFocus = () => void refreshAvailability();
@@ -98,7 +120,7 @@ export function BookingFlow() {
       window.clearInterval(timer);
       window.removeEventListener('focus', refreshOnFocus);
     };
-  }, [refreshAvailability]);
+  }, [bookingDates.length, refreshAvailability]);
 
   const handleChange = (field: 'name' | 'phone' | 'notes', value: string) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -119,7 +141,12 @@ export function BookingFlow() {
   const canAdvance = (() => {
     if (currentStep === 'service') return Boolean(selectedService);
     if (currentStep === 'date') return Boolean(selectedDate) && availabilityLoaded;
-    if (currentStep === 'time') return Boolean(selectedSlot) && availabilityLoaded && !bookedTimes.has(selectedSlot);
+    if (currentStep === 'time') {
+      return Boolean(selectedSlot)
+        && availabilityLoaded
+        && !bookedTimes.has(selectedSlot)
+        && isSaoPauloAppointmentInFuture(selectedDate, selectedSlot, now);
+    }
     if (currentStep === 'details') return form.name.trim().length > 1 && form.phone.trim().length > 4;
     return true;
   })();
@@ -235,15 +262,13 @@ export function BookingFlow() {
             <div className="rounded-[28px] border border-white/10 bg-[#171b1d] p-5">
               <p className="text-[10px] uppercase tracking-[0.3em] text-[#d7a29d]">Ações</p>
               <div className="mt-4 flex flex-col gap-3">
-                <button type="button" className="inline-flex items-center justify-center rounded-full border border-white/15 bg-transparent px-5 py-3 text-sm font-semibold text-white transition duration-200 hover:border-[#f7b9b1]/60 hover:text-[#f7b9b1] focus:outline-none focus:ring-2 focus:ring-[#f7b9b1] focus:ring-offset-2 focus:ring-offset-[#171b1d] active:scale-[0.98]">
+                <Link
+                  href="/minha-conta"
+                  onClick={() => window.sessionStorage.setItem('gui_barber_customer_phone', form.phone)}
+                  className="inline-flex items-center justify-center rounded-full border border-white/15 bg-transparent px-5 py-3 text-sm font-semibold text-white transition duration-200 hover:border-[#f7b9b1]/60 hover:text-[#f7b9b1] focus:outline-none focus:ring-2 focus:ring-[#f7b9b1] focus:ring-offset-2 focus:ring-offset-[#171b1d] active:scale-[0.98]"
+                >
                   Meus serviços
-                </button>
-                <button type="button" className="inline-flex items-center justify-center rounded-full border border-white/15 bg-transparent px-5 py-3 text-sm font-semibold text-white transition duration-200 hover:border-[#f7b9b1]/60 hover:text-[#f7b9b1] focus:outline-none focus:ring-2 focus:ring-[#f7b9b1] focus:ring-offset-2 focus:ring-offset-[#171b1d] active:scale-[0.98]">
-                  Ver histórico
-                </button>
-                <button type="button" className="inline-flex items-center justify-center rounded-full bg-[#d64a3d] px-5 py-3 text-sm font-semibold text-white transition duration-200 hover:bg-[#e55c4a] focus:outline-none focus:ring-2 focus:ring-[#f7b9b1] focus:ring-offset-2 focus:ring-offset-[#171b1d] active:scale-[0.98]">
-                  Adicionar ao calendário
-                </button>
+                </Link>
               </div>
             </div>
           </div>
@@ -260,9 +285,6 @@ export function BookingFlow() {
         </div>
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-          <Link href={`/minha-conta?phone=${encodeURIComponent(form.phone || '')}`} className="inline-flex items-center justify-center rounded-full bg-[#d64a3d] px-6 py-3 text-sm font-semibold text-white transition duration-200 hover:bg-[#e55c4a] focus:outline-none focus:ring-2 focus:ring-[#f7b9b1] focus:ring-offset-2 focus:ring-offset-[#101112] active:scale-[0.98]">
-            Minha conta
-          </Link>
           <Link href="/" className="inline-flex items-center justify-center rounded-full border border-white/15 bg-transparent px-6 py-3 text-sm font-semibold text-white transition duration-200 hover:border-[#f7b9b1]/60 hover:text-[#f7b9b1] focus:outline-none focus:ring-2 focus:ring-[#f7b9b1] focus:ring-offset-2 focus:ring-offset-[#101112] active:scale-[0.98]">
             Voltar ao início
           </Link>
@@ -323,28 +345,32 @@ export function BookingFlow() {
               {availabilityError ? <p role="alert" className="text-sm text-[#ffb0a5]">{availabilityError}</p> : null}
               {!availabilityLoaded && !availabilityError ? <p className="text-sm text-zinc-400">Consultando horários disponíveis...</p> : null}
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {nextDates.map((date) => {
-                  const isDisabled = availabilityLoaded && timeSlots.every((slot) => occupiedSlots.some((booking) => bookingIntervalsOverlap(
-                    { date, time: slot, durationMinutes: selectedService.duration },
-                    booking,
-                  )));
+                {bookingDates.map((date) => {
+                  const hasNoAvailableTime = availabilityLoaded && timeSlots.every((slot) =>
+                    occupiedSlots.some((booking) => bookingIntervalsOverlap(
+                      { date, time: slot, durationMinutes: selectedService.duration },
+                      booking,
+                    ))
+                    || !isSaoPauloAppointmentInFuture(date, slot, now),
+                  );
                   const isSelected = selectedDate === date;
                   return (
                     <button
                       key={date}
                       type="button"
-                      disabled={isDisabled}
                       onClick={() => setSelectedDate(date)}
+                      aria-label={`${new Date(`${date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: 'long' })}${hasNoAvailableTime ? ', sem horários disponíveis' : ''}`}
                       className={`rounded-2xl border p-3 text-left transition-all duration-200 ${
-                        isDisabled
-                          ? 'cursor-not-allowed border-white/5 bg-white/[0.02] text-zinc-600'
-                          : isSelected
-                            ? 'border-[#d64a3d] bg-[#d64a3d]/10 text-[#f7b9b1]'
+                        isSelected
+                          ? 'border-[#d64a3d] bg-[#d64a3d]/10 text-[#f7b9b1]'
+                          : hasNoAvailableTime
+                            ? 'border-white/5 bg-white/[0.02] text-zinc-500 hover:border-white/10'
                             : 'border-white/10 bg-white/3 text-zinc-200 hover:border-white/20 hover:bg-white/5'
                       }`}
                     >
-                      <p className="text-[10px] uppercase tracking-[0.2em]">{new Date(`${date}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'short' })}</p>
-                      <p className="mt-2 text-lg font-semibold">{new Date(`${date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</p>
+                      <p className="text-[10px] uppercase tracking-[0.2em]">{new Date(`${date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'short' })}</p>
+                      <p className="mt-2 text-lg font-semibold">{new Date(`${date}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: 'short' })}</p>
+                      {hasNoAvailableTime ? <p className="mt-1 text-xs">Sem horários livres</p> : null}
                     </button>
                   );
                 })}
@@ -359,7 +385,11 @@ export function BookingFlow() {
               {!availabilityLoaded && !availabilityError ? <p className="text-sm text-zinc-400">Atualizando horários...</p> : null}
               <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-4">
                 {timeSlots.map((slot) => {
-                  const isDisabled = !availabilityLoaded || Boolean(availabilityError) || bookedTimes.has(slot);
+                  const isInFuture = isSaoPauloAppointmentInFuture(selectedDate, slot, now);
+                  const isDisabled = !availabilityLoaded
+                    || Boolean(availabilityError)
+                    || bookedTimes.has(slot)
+                    || !isInFuture;
                   const isSelected = selectedSlot === slot;
                   return (
                     <button
@@ -375,7 +405,7 @@ export function BookingFlow() {
                             : 'border-white/10 bg-white/3 text-zinc-200 hover:border-white/20 hover:bg-white/5'
                       }`}
                     >
-                      {slot}{bookedTimes.has(slot) ? ' • Ocupado' : ''}
+                      {slot}{bookedTimes.has(slot) ? ' • Ocupado' : !isInFuture ? ' • Encerrado' : ''}
                     </button>
                   );
                 })}
@@ -491,7 +521,7 @@ export function BookingFlow() {
             <div className="rounded-2xl border border-white/10 bg-[#111315] p-4">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-zinc-400">Data</span>
-                <span className="text-sm text-white">{formatLabelDate(selectedDate)}</span>
+                <span className="text-sm text-white">{selectedDate ? formatLabelDate(selectedDate) : '—'}</span>
               </div>
               <div className="mt-3 flex items-center justify-between gap-2">
                 <span className="text-zinc-400">Horário</span>

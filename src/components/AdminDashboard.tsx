@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { services as baseServices } from '@/data/barber';
+import { addBookingDays, getSaoPauloDate } from '@/lib/booking-time';
 import { getSupabaseBrowserClient } from '@/lib/supabase-browser';
 
 type BookingStatus = 'pendente' | 'confirmado' | 'concluido' | 'cancelado' | 'no-show';
@@ -104,7 +105,8 @@ function loadSettings(): ShopSettings {
 }
 
 function formatDate(dateString: string) {
-  return new Date(`${dateString}T00:00:00`).toLocaleDateString('pt-BR', {
+  return new Date(`${dateString}T12:00:00Z`).toLocaleDateString('pt-BR', {
+    timeZone: 'UTC',
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -135,7 +137,7 @@ export function AdminDashboard() {
   const [bookingsError, setBookingsError] = useState('');
   const [servicesList, setServicesList] = useState<ServiceItem[]>(() => loadServices());
   const [settings, setSettings] = useState<ShopSettings>(() => loadSettings());
-  const [todayKey] = useState(() => new Date().toISOString().slice(0, 10));
+  const [todayKey] = useState(() => getSaoPauloDate());
   const [filter, setFilter] = useState<'todos' | 'hoje' | 'proximos'>('todos');
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -290,7 +292,7 @@ export function AdminDashboard() {
 
   const chartPoints = useMemo(() => {
     const dayCount = { today: 1, week: 7, month: 30, quarter: 90, year: 365 }[reportRange];
-    const today = new Date(`${todayKey}T00:00:00`);
+    const today = new Date(`${todayKey}T00:00:00Z`);
     const pointCount = reportRange === 'today' ? 9 : reportRange === 'week' ? 7 : 8;
     const series = Array.from({ length: pointCount }, (_, idx) => {
       if (reportRange === 'today') {
@@ -303,25 +305,25 @@ export function AdminDashboard() {
       }
 
       const startDate = new Date(today);
-      startDate.setDate(today.getDate() - (dayCount - 1));
+      startDate.setUTCDate(today.getUTCDate() - (dayCount - 1));
       if (reportRange === 'week') {
         const date = new Date(startDate);
-        date.setDate(startDate.getDate() + idx);
+        date.setUTCDate(startDate.getUTCDate() + idx);
         const key = date.toISOString().slice(0, 10);
         const amount = bookings
           .filter((booking) => booking.date === key)
           .reduce((sum, booking) => sum + booking.price, 0);
 
         return {
-          label: date.toLocaleDateString('pt-BR', { weekday: 'short' }),
+          label: date.toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'short' }),
           value: amount,
         };
       }
 
       const bucketStart = new Date(startDate);
-      bucketStart.setDate(startDate.getDate() + Math.floor((idx * dayCount) / 8));
+      bucketStart.setUTCDate(startDate.getUTCDate() + Math.floor((idx * dayCount) / 8));
       const bucketEnd = new Date(startDate);
-      bucketEnd.setDate(startDate.getDate() + Math.floor(((idx + 1) * dayCount) / 8));
+      bucketEnd.setUTCDate(startDate.getUTCDate() + Math.floor(((idx + 1) * dayCount) / 8));
       const startKey = bucketStart.toISOString().slice(0, 10);
       const endKey = bucketEnd.toISOString().slice(0, 10);
       const amount = bookings
@@ -329,7 +331,7 @@ export function AdminDashboard() {
         .reduce((sum, booking) => sum + booking.price, 0);
 
       return {
-        label: bucketStart.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+        label: bucketStart.toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: 'short' }),
         value: amount,
       };
     });
@@ -355,10 +357,10 @@ export function AdminDashboard() {
   const reportData = useMemo(() => {
     const rangeMap = {
       today: () => bookings.filter((booking) => booking.date === todayKey),
-      week: () => bookings.filter((booking) => booking.date >= new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString().slice(0, 10)),
-      month: () => bookings.filter((booking) => booking.date >= new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString().slice(0, 10)),
-      quarter: () => bookings.filter((booking) => booking.date >= new Date(Date.now() - 1000 * 60 * 60 * 24 * 90).toISOString().slice(0, 10)),
-      year: () => bookings.filter((booking) => booking.date >= new Date(Date.now() - 1000 * 60 * 60 * 24 * 365).toISOString().slice(0, 10)),
+      week: () => bookings.filter((booking) => booking.date >= addBookingDays(todayKey, -7)),
+      month: () => bookings.filter((booking) => booking.date >= addBookingDays(todayKey, -30)),
+      quarter: () => bookings.filter((booking) => booking.date >= addBookingDays(todayKey, -90)),
+      year: () => bookings.filter((booking) => booking.date >= addBookingDays(todayKey, -365)),
     };
     const current = rangeMap[reportRange]();
     const total = current.reduce((sum, booking) => sum + booking.price, 0);

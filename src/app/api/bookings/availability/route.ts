@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isValidBookingDate } from '@/lib/booking-time';
 import {
   BOOKINGS_MIGRATION_MESSAGE,
   isBookingsMigrationMissing,
@@ -11,14 +12,12 @@ type OccupiedSlot = {
   service_duration_minutes: number;
 };
 
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const from = searchParams.get('from') ?? '';
   const to = searchParams.get('to') ?? '';
 
-  if (!DATE_PATTERN.test(from) || !DATE_PATTERN.test(to) || from > to) {
+  if (!isValidBookingDate(from) || !isValidBookingDate(to) || from > to) {
     return NextResponse.json({ message: 'Informe um intervalo de datas válido.' }, { status: 400 });
   }
 

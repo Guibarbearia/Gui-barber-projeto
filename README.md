@@ -1,5 +1,15 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Supabase e painel administrativo
+
+Configure as variáveis de [`.env.example`](./.env.example) no ambiente do servidor. `SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_URL` devem apontar para o mesmo projeto; a chave `SUPABASE_SERVICE_ROLE_KEY` e `ADMIN_SESSION_SECRET` são privadas e nunca devem usar o prefixo `NEXT_PUBLIC_`.
+
+Crie a conta do administrador em **Supabase Auth** com e-mail e senha e configure o mesmo e-mail em `ADMIN_EMAIL`. O login valida a senha pelo Supabase Auth e só emite a sessão administrativa assinada quando o e-mail autenticado corresponde à allowlist. Não configure uma senha no código ou no banco. Reinicie o servidor depois de alterar variáveis de ambiente.
+
+As tabelas de agendamento usam RLS e não permitem consulta direta por clientes anônimos ou autenticados. As rotas do servidor consultam o banco e retornam apenas os campos necessários. A consulta de “Meus serviços” por telefone exibe um resumo sem nome, telefone ou observações; para cancelar ou remarcar, o cliente confirma a posse do telefone pelo Supabase Auth.
+
+Datas e horários de atendimento são tratados como horário civil de `America/Sao_Paulo`. As migrações de `supabase/migrations` devem estar aplicadas no projeto Supabase para que a agenda e a restrição contra conflitos funcionem.
+
 ## Getting Started
 
 First, run the development server:

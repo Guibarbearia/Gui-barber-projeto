@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { services, timeSlots } from '@/data/barber';
-import { getSaoPauloDate } from '@/lib/booking-time';
+import { isSaoPauloAppointmentInFuture, isValidBookingDate } from '@/lib/booking-time';
 import { normalizeBrazilianPhone } from '@/lib/phone';
 import {
   BOOKINGS_MIGRATION_MESSAGE,
@@ -21,8 +21,6 @@ type BookingInput = {
 type CreatedBooking = {
   id: string;
 };
-
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function POST(request: Request) {
   let body: BookingInput;
@@ -48,15 +46,15 @@ export async function POST(request: Request) {
     !normalizedPhone ||
     phone.length > 30 ||
     !service ||
-    !DATE_PATTERN.test(date) ||
+    !isValidBookingDate(date) ||
     !timeSlots.includes(time) ||
     notes.length > 1000
   ) {
     return NextResponse.json({ message: 'Confira os dados do agendamento e tente novamente.' }, { status: 400 });
   }
 
-  if (date <= getSaoPauloDate()) {
-    return NextResponse.json({ message: 'Escolha uma data futura.' }, { status: 400 });
+  if (!isSaoPauloAppointmentInFuture(date, time)) {
+    return NextResponse.json({ message: 'Escolha uma data e um horário futuros.' }, { status: 400 });
   }
 
   try {

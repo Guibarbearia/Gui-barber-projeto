@@ -52,13 +52,39 @@ export function getConfiguredAdminEmail() {
   return normalizeAdminEmail(getEnv('ADMIN_EMAIL'));
 }
 
+function isValidSupabaseUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname));
+  } catch {
+    return false;
+  }
+}
+
+export function getAdminConfigurationError() {
+  const serverUrl = getEnv('SUPABASE_URL').replace(/\/+$/, '');
+  const publicUrl = getEnv('NEXT_PUBLIC_SUPABASE_URL').replace(/\/+$/, '');
+  const requirements: [string, boolean][] = [
+    ['ADMIN_EMAIL', Boolean(getConfiguredAdminEmail())],
+    ['ADMIN_SESSION_SECRET (mínimo 32 caracteres)', getEnv('ADMIN_SESSION_SECRET').length >= 32],
+    ['SUPABASE_URL válido', isValidSupabaseUrl(serverUrl)],
+    ['NEXT_PUBLIC_SUPABASE_URL válido', isValidSupabaseUrl(publicUrl)],
+    ['NEXT_PUBLIC_SUPABASE_ANON_KEY', Boolean(getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY'))],
+    ['SUPABASE_SERVICE_ROLE_KEY', Boolean(getEnv('SUPABASE_SERVICE_ROLE_KEY'))],
+  ];
+  const missing = requirements.filter(([, configured]) => !configured).map(([name]) => name);
+
+  if (serverUrl && publicUrl && serverUrl !== publicUrl) {
+    missing.push('SUPABASE_URL e NEXT_PUBLIC_SUPABASE_URL devem apontar para o mesmo projeto');
+  }
+
+  return missing.length
+    ? `Configure no ambiente do servidor: ${missing.join(', ')}.`
+    : '';
+}
+
 export function isAdminConfigured() {
-  return Boolean(
-    getConfiguredAdminEmail() &&
-      getEnv('ADMIN_SESSION_SECRET').length >= 32 &&
-      getEnv('SUPABASE_URL') &&
-      getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
-  );
+  return !getAdminConfigurationError();
 }
 
 export async function safeEqual(left: string, right: string) {

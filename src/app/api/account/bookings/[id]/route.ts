@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getSaoPauloDate } from '@/lib/booking-time';
+import {
+  getSaoPauloAppointmentTimestamp,
+  isSaoPauloAppointmentInFuture,
+  isValidBookingDate,
+} from '@/lib/booking-time';
 import { timeSlots } from '@/data/barber';
 import { getAuthenticatedCustomerPhone } from '@/lib/customer-auth';
 import {
@@ -65,8 +69,11 @@ export async function PATCH(
 
     const update: Record<string, string> = {};
     if (body.status === 'cancelado') {
-      const appointmentAt = new Date(`${booking.booking_date}T${booking.booking_time.slice(0, 5)}:00-03:00`);
-      const leadHours = (appointmentAt.getTime() - Date.now()) / (1000 * 60 * 60);
+      const appointmentAt = getSaoPauloAppointmentTimestamp(
+        booking.booking_date,
+        booking.booking_time.slice(0, 5),
+      );
+      const leadHours = (appointmentAt - Date.now()) / (1000 * 60 * 60);
 
       if (!['pendente', 'confirmado'].includes(booking.status) || leadHours < 1) {
         return NextResponse.json({ message: 'Este agendamento não pode mais ser cancelado pelo site.' }, { status: 400 });
@@ -77,10 +84,10 @@ export async function PATCH(
       if (typeof body.cancellationNote === 'string') update.cancellation_note = body.cancellationNote.slice(0, 1000);
     } else if (
       typeof body.date === 'string' &&
-      /^\d{4}-\d{2}-\d{2}$/.test(body.date) &&
-      body.date > getSaoPauloDate() &&
+      isValidBookingDate(body.date) &&
       typeof body.time === 'string' &&
       timeSlots.includes(body.time) &&
+      isSaoPauloAppointmentInFuture(body.date, body.time) &&
       ['pendente', 'confirmado'].includes(booking.status)
     ) {
       update.booking_date = body.date;

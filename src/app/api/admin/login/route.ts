@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   ADMIN_COOKIE_NAME,
   getConfiguredAdminEmail,
-  isAdminConfigured,
+  getAdminConfigurationError,
   normalizeAdminEmail,
   signAdminSession,
 } from '@/lib/admin-auth';
@@ -25,11 +25,12 @@ export async function POST(request: Request) {
   const identifier = typeof credentials.identifier === 'string' ? credentials.identifier : '';
   const accessToken = typeof credentials.accessToken === 'string' ? credentials.accessToken : '';
 
-  if (!isAdminConfigured()) {
+  const configurationError = getAdminConfigurationError();
+  if (configurationError) {
     return NextResponse.json(
       {
         ok: false,
-        message: 'A autenticação administrativa ainda não está configurada para o Supabase.',
+        message: `A autenticação administrativa não está pronta. ${configurationError}`,
       },
       { status: 503 },
     );
