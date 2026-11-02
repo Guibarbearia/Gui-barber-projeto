@@ -199,9 +199,15 @@ export function MyAccountClient() {
   useEffect(() => {
     const initialTime = window.setTimeout(() => setNowMs(Date.now()), 0);
     const timer = window.setInterval(() => setNowMs(Date.now()), 60000);
+    const refreshTime = () => {
+      if (document.visibilityState === 'visible') setNowMs(Date.now());
+    };
+    document.addEventListener('visibilitychange', refreshTime);
+
     return () => {
       window.clearTimeout(initialTime);
       window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshTime);
     };
   }, []);
 

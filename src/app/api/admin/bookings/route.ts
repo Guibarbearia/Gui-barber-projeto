@@ -32,7 +32,9 @@ export async function GET() {
 
   try {
     const [bookings, queue] = await Promise.all([
-      supabaseBookingsRequest<SupabaseBooking[]>('?select=*&order=booking_date.asc,booking_time.asc'),
+      supabaseBookingsRequest<SupabaseBooking[]>(
+        '?select=id,customer_name,phone,service,price,booking_date,booking_time,service_duration_minutes,notes,professional,status,payment_method,created_at&order=booking_date.asc,booking_time.asc',
+      ),
       supabaseBookingQueueRequest<{ id: string }[]>('?select=id'),
     ]);
     return NextResponse.json({

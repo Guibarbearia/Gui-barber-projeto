@@ -1,37 +1,11 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { services, testimonials, barberLocation, barberStats, barberSettings } from '@/data/barber';
 
 const heroStats = [
   { value: `${barberStats.experienceYears} anos`, label: 'de experiência' },
   { value: `${barberStats.cutsCompleted.toLocaleString('pt-BR')}+`, label: 'cortes realizados' },
   { value: '4.9', label: 'nota média' },
-];
-
-const portfolioItems = [
-  {
-    title: 'Vídeos',
-    tag: 'Reels',
-    description: 'Cortes em movimento, barbas e acabamento em destaque.',
-    accent: 'bg-[linear-gradient(135deg,#1a2127,#d64a3d)]',
-  },
-  {
-    title: 'Cortes',
-    tag: 'Resultado',
-    description: 'Finais impecáveis com visual limpo e masculino.',
-    accent: 'bg-[linear-gradient(135deg,#d64a3d,#2a3139)]',
-  },
-  {
-    title: 'Barba',
-    tag: 'Detalhe',
-    description: 'Modelagens precisas para valorizar o rosto.',
-    accent: 'bg-[linear-gradient(135deg,#424851,#111315)]',
-  },
-  {
-    title: 'Ambiente',
-    tag: 'Espaço',
-    description: 'A atmosfera premium da barbearia em destaque.',
-    accent: 'bg-[linear-gradient(135deg,#111315,#d64a3d)]',
-  },
 ];
 
 const footerLinks = [
@@ -182,47 +156,46 @@ export default function Home() {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
-          <article className="group overflow-hidden rounded-[30px] border border-white/10 bg-[#111315] transition duration-200 hover:-translate-y-1 hover:border-[#d64a3d]/60">
-            <div className="relative h-[360px] bg-[linear-gradient(135deg,#1f2428,#d64a3d)] p-6 sm:p-8">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.26),_transparent_40%)]" />
-              <div className="relative z-10 flex h-full flex-col justify-between">
-                <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.28em] text-[#f7b9b1]">
-                  <span>Vídeos</span>
-                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5">Reel</span>
-                </div>
-                <div>
-                  <p className="text-3xl font-black text-white sm:text-4xl">Cortes em movimento</p>
-                  <p className="mt-3 max-w-md text-sm leading-6 text-[#f2e7df]">
-                    A estrutura está pronta para receber vídeos de cortes, barba e acabamento em alta qualidade.
-                  </p>
-                </div>
-              </div>
-              <div className="absolute inset-x-0 bottom-0 flex items-center justify-center pb-8">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full border border-white/60 bg-black/25 text-2xl text-white shadow-[0_12px_25px_rgba(0,0,0,0.28)] transition duration-200 group-hover:scale-105">
-                  ▶
-                </div>
-              </div>
+          <article className="overflow-hidden rounded-[30px] border border-white/10 bg-[#111315] transition duration-200 hover:-translate-y-1 hover:border-[#d64a3d]/60">
+            <div className="relative aspect-[4/3] bg-black sm:aspect-video">
+              <video
+                className="h-full w-full object-contain"
+                controls
+                preload="metadata"
+                playsInline
+                poster="/gallery/corte-classico.jpeg"
+                aria-label="Vídeo de um trabalho do GUI BARBER"
+              >
+                <source src="/gallery/trabalho-video.mp4" type="video/mp4" />
+                <source src="/gallery/trabalho-video.mov" type="video/quicktime" />
+                Seu navegador não suporta a reprodução deste vídeo.
+              </video>
             </div>
           </article>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-            {portfolioItems.slice(1).map((item) => (
-              <article key={item.title} className="group overflow-hidden rounded-[28px] border border-white/10 bg-[#111315] transition duration-200 hover:-translate-y-1 hover:border-[#d64a3d]/60">
-                <div className={`relative h-40 ${item.accent} p-5`}>
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.24),_transparent_42%)]" />
-                  <div className="relative flex h-full flex-col justify-between">
-                    <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-[#f7b9b1]">
-                      <span>{item.tag}</span>
-                      <span className="rounded-full border border-white/15 bg-black/10 px-2 py-1">{item.title}</span>
-                    </div>
-                    <p className="max-w-[14rem] text-xl font-semibold text-white">{item.title}</p>
-                  </div>
-                </div>
-                <div className="p-4">
-                  <p className="text-sm leading-6 text-[#d0c8c2]">{item.description}</p>
-                </div>
-              </article>
-            ))}
+            <article className="overflow-hidden rounded-[28px] border border-white/10 bg-[#111315] transition duration-200 hover:-translate-y-1 hover:border-[#d64a3d]/60">
+              <div className="relative aspect-[4/3]">
+                <Image
+                  src="/gallery/corte-classico.jpeg"
+                  alt="Corte clássico com acabamento degradê"
+                  fill
+                  sizes="(max-width: 1023px) 50vw, 28vw"
+                  className="object-cover"
+                />
+              </div>
+            </article>
+            <article className="overflow-hidden rounded-[28px] border border-white/10 bg-[#111315] transition duration-200 hover:-translate-y-1 hover:border-[#d64a3d]/60">
+              <div className="relative aspect-[4/3]">
+                <Image
+                  src="/gallery/corte-desenho.jpeg"
+                  alt="Corte com desenho e barba alinhada"
+                  fill
+                  sizes="(max-width: 1023px) 50vw, 28vw"
+                  className="object-cover"
+                />
+              </div>
+            </article>
           </div>
         </div>
       </section>

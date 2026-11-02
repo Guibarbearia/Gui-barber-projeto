@@ -144,10 +144,17 @@ export function AdminDashboard() {
   const [draft, setDraft] = useState<BookingRecord | null>(null);
   const [serviceDraft, setServiceDraft] = useState<ServiceItem | null>(null);
   const [reportRange, setReportRange] = useState<'today' | 'week' | 'month' | 'quarter' | 'year'>('month');
+  const [bookingPage, setBookingPage] = useState(1);
+  const bookingPageSize = 25;
 
-  const refreshBookings = useCallback(async () => {
+  const refreshBookings = useCallback(async (signal?: AbortSignal) => {
+    if (document.visibilityState !== 'visible') return;
+
     try {
-      const response = await fetch('/api/admin/bookings', { cache: 'no-store' });
+      const response = await fetch('/api/admin/bookings', {
+        cache: 'no-store',
+        signal,
+      });
       const payload = await response.json() as { bookings?: BookingRecord[]; queueBookingIds?: string[]; message?: string };
       if (!response.ok || !payload.bookings || !payload.queueBookingIds) {
         throw new Error(payload.message || 'Não foi possível carregar os agendamentos.');
@@ -157,6 +164,7 @@ export function AdminDashboard() {
       setQueueBookingIds(payload.queueBookingIds);
       setBookingsError('');
     } catch (error) {
+      if (signal?.aborted) return;
       setBookings([]);
       setQueueBookingIds([]);
       setBookingsError(error instanceof Error ? error.message : 'Não foi possível carregar os agendamentos.');
@@ -164,15 +172,31 @@ export function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    const initialRefresh = window.setTimeout(() => void refreshBookings(), 0);
-    const timer = window.setInterval(() => void refreshBookings(), 10000);
-    const refreshOnFocus = () => void refreshBookings();
+    let active = true;
+    let requestController: AbortController | null = null;
+    const refresh = () => {
+      if (!active || document.visibilityState !== 'visible') return;
+      requestController?.abort();
+      requestController = new AbortController();
+      void refreshBookings(requestController.signal);
+    };
+    const initialRefresh = window.setTimeout(refresh, 0);
+    const timer = window.setInterval(refresh, 30000);
+    const refreshOnFocus = () => refresh();
+    const refreshOnVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+
     window.addEventListener('focus', refreshOnFocus);
+    document.addEventListener('visibilitychange', refreshOnVisibilityChange);
 
     return () => {
+      active = false;
       window.clearTimeout(initialRefresh);
       window.clearInterval(timer);
+      requestController?.abort();
       window.removeEventListener('focus', refreshOnFocus);
+      document.removeEventListener('visibilitychange', refreshOnVisibilityChange);
     };
   }, [refreshBookings]);
 
@@ -227,9 +251,19 @@ export function AdminDashboard() {
     [bookings],
   );
 
-  const todayBookings = useMemo(
-    () => bookings.filter((booking) => booking.date === todayKey).length,
+  const todayBookingList = useMemo(
+    () => bookings.filter((booking) => booking.date === todayKey),
     [bookings, todayKey],
+  );
+
+  const todayBookings = todayBookingList.length;
+  const todayCustomerCount = useMemo(
+    () => new Set(todayBookingList.map((booking) => booking.phone)).size,
+    [todayBookingList],
+  );
+  const todayRevenue = useMemo(
+    () => todayBookingList.reduce((sum, booking) => sum + booking.price, 0),
+    [todayBookingList],
   );
 
   const pendingBookings = useMemo(
@@ -244,8 +278,9 @@ export function AdminDashboard() {
 
   const filteredBookings = useMemo(() => {
     const query = search.trim().toLowerCase();
+    const queueIds = new Set(queueBookingIds);
     return bookings.filter((booking) => {
-      if (!queueBookingIds.includes(booking.id)) return false;
+      if (!queueIds.has(booking.id)) return false;
       const matchText = !query || booking.customerName.toLowerCase().includes(query) || booking.phone.includes(query) || booking.service.toLowerCase().includes(query);
       if (!matchText) return false;
       if (filter === 'hoje') return booking.date === todayKey;
@@ -253,6 +288,12 @@ export function AdminDashboard() {
       return true;
     });
   }, [bookings, filter, queueBookingIds, search, todayKey]);
+
+  const bookingPageCount = Math.max(1, Math.ceil(filteredBookings.length / bookingPageSize));
+  const visibleBookings = useMemo(() => {
+    const start = (Math.min(bookingPage, bookingPageCount) - 1) * bookingPageSize;
+    return filteredBookings.slice(start, start + bookingPageSize);
+  }, [bookingPage, bookingPageCount, bookingPageSize, filteredBookings]);
 
   const customerSummary = useMemo(() => {
     const map = new Map<string, { name: string; phone: string; atendimentos: number; totalGasto: number; ultimoAtendimento: string }>();
@@ -347,11 +388,10 @@ export function AdminDashboard() {
     .join(' ');
 
   const financialSummary = useMemo(() => {
-    const pix = bookings.filter((booking) => booking.paymentMethod === 'pix').reduce((sum, booking) => sum + booking.price, 0);
-    const cartao = bookings.filter((booking) => booking.paymentMethod === 'cartao').reduce((sum, booking) => sum + booking.price, 0);
-    const dinheiro = bookings.filter((booking) => booking.paymentMethod === 'dinheiro').reduce((sum, booking) => sum + booking.price, 0);
-    const outros = bookings.filter((booking) => booking.paymentMethod === 'outros').reduce((sum, booking) => sum + booking.price, 0);
-    return { pix, cartao, dinheiro, outros };
+    return bookings.reduce((summary, booking) => {
+      summary[booking.paymentMethod] += booking.price;
+      return summary;
+    }, { pix: 0, cartao: 0, dinheiro: 0, outros: 0 });
   }, [bookings]);
 
   const reportData = useMemo(() => {
@@ -434,10 +474,10 @@ export function AdminDashboard() {
   };
 
   const stats = [
-    { label: 'Faturamento hoje', value: currency(bookings.filter((booking) => booking.date === todayKey).reduce((sum, booking) => sum + booking.price, 0)), change: '+12.4%', positive: true, icon: 'R$' },
+    { label: 'Faturamento hoje', value: currency(todayRevenue), change: '+12.4%', positive: true, icon: 'R$' },
     { label: 'Agendamentos hoje', value: `${todayBookings}`, change: '+8.1%', positive: true, icon: '•' },
     { label: 'Pendentes', value: `${pendingBookings}`, change: '+3.6%', positive: true, icon: '◎' },
-    { label: 'Clientes hoje', value: `${new Set(bookings.filter((booking) => booking.date === todayKey).map((booking) => booking.phone)).size}`, change: '+5.3%', positive: true, icon: '★' },
+    { label: 'Clientes hoje', value: `${todayCustomerCount}`, change: '+5.3%', positive: true, icon: '★' },
     { label: 'Cancelamentos', value: `${cancelledBookings}`, change: '-2.1%', positive: false, icon: 'x' },
   ];
 
@@ -619,7 +659,7 @@ export function AdminDashboard() {
                 </div>
 
                 <div className="agenda-list">
-                  {bookings.filter((booking) => booking.date === todayKey).slice(0, 4).map((booking) => (
+                  {todayBookingList.slice(0, 4).map((booking) => (
                     <button key={booking.id} type="button" className="agenda-item" onClick={() => openEditor(booking)}>
                       <div className="time-block">{booking.time}</div>
                       <div className="agenda-copy">
@@ -669,12 +709,12 @@ export function AdminDashboard() {
               <div className="toolbar-row">
                 <div className="segmented-control">
                   {(['todos', 'hoje', 'proximos'] as const).map((option) => (
-                    <button key={option} type="button" className={filter === option ? 'active' : ''} onClick={() => setFilter(option)}>
+                    <button key={option} type="button" className={filter === option ? 'active' : ''} onClick={() => { setFilter(option); setBookingPage(1); }}>
                       {option === 'todos' ? 'Todos' : option === 'hoje' ? 'Hoje' : 'Próximos'}
                     </button>
                   ))}
                 </div>
-                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar cliente ou serviço" className="search-input" />
+                <input value={search} onChange={(event) => { setSearch(event.target.value); setBookingPage(1); }} placeholder="Buscar cliente ou serviço" className="search-input" />
               </div>
             </section>
 
@@ -715,7 +755,7 @@ export function AdminDashboard() {
             <section className="panel table-panel">
               <div className="panel-header compact">
                 <p className="eyebrow">Fila operacional</p>
-                <span className="muted-link">{filteredBookings.length} itens</span>
+                <span className="muted-link">{filteredBookings.length} itens · página {Math.min(bookingPage, bookingPageCount)} de {bookingPageCount}</span>
               </div>
 
               <div className="table-wrap">
@@ -732,7 +772,7 @@ export function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredBookings.map((booking) => (
+                    {visibleBookings.map((booking) => (
                       <tr key={booking.id}>
                         <td>
                           <div className="client-cell">
@@ -759,6 +799,13 @@ export function AdminDashboard() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+              <div className="pagination-controls" aria-label="Paginação dos agendamentos">
+                <span className="muted-link">Exibindo {visibleBookings.length} de {filteredBookings.length}</span>
+                <div className="table-actions">
+                  <button type="button" className="tiny-button" disabled={bookingPage <= 1} onClick={() => setBookingPage((page) => Math.max(1, page - 1))}>Anterior</button>
+                  <button type="button" className="tiny-button" disabled={bookingPage >= bookingPageCount} onClick={() => setBookingPage((page) => Math.min(bookingPageCount, page + 1))}>Próxima</button>
+                </div>
               </div>
             </section>
           </div>

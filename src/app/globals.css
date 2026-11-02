@@ -33,6 +33,12 @@ html {
   scroll-behavior: smooth;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -141,7 +147,7 @@ img {
   color: var(--text-soft);
   padding: 12px 14px;
   text-align: left;
-  transition: all 180ms ease;
+  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
 }
 
 .nav-item:hover,
@@ -226,6 +232,7 @@ img {
 
 .admin-main {
   flex: 1;
+  min-width: 0;
   padding: 26px 28px 36px;
 }
 
@@ -315,7 +322,7 @@ img {
 .editor-grid select,
 .editor-grid textarea,
 .segmented-control button {
-  transition: all 180ms ease;
+  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, opacity 180ms ease, transform 180ms ease;
 }
 
 .primary-button {
@@ -678,6 +685,7 @@ img {
   gap: 12px;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
 }
 
 .segmented-control {
@@ -757,6 +765,20 @@ img {
 .table-wrap {
   width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.tiny-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .table-panel table,
@@ -894,6 +916,22 @@ img {
   .search-input {
     width: 100%;
     min-width: 0;
+  }
+
+  .pagination-controls {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .segmented-control {
+    max-width: 100%;
+    overflow-x: auto;
+    border-radius: 16px;
+  }
+
+  .segmented-control button {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .admin-sidebar {

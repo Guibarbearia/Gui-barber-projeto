@@ -70,15 +70,18 @@ export function BookingFlow() {
     ))),
   ), [occupiedSlots, selectedDate, selectedService.duration]);
 
-  const refreshAvailability = useCallback(async () => {
-    if (!bookingDates.length) return;
+  const refreshAvailability = useCallback(async (signal?: AbortSignal) => {
+    if (!bookingDates.length || document.visibilityState !== 'visible') return;
 
     try {
       const params = new URLSearchParams({
         from: bookingDates[0],
         to: bookingDates[bookingDates.length - 1],
       });
-      const response = await fetch(`/api/bookings/availability?${params.toString()}`, { cache: 'no-store' });
+      const response = await fetch(`/api/bookings/availability?${params.toString()}`, {
+        cache: 'no-store',
+        signal,
+      });
       const payload = await response.json() as { occupied?: OccupiedSlot[]; message?: string };
 
       if (!response.ok || !payload.occupied) {
@@ -89,6 +92,7 @@ export function BookingFlow() {
       setAvailabilityError('');
       setAvailabilityLoaded(true);
     } catch (error) {
+      if (signal?.aborted) return;
       setAvailabilityError(error instanceof Error ? error.message : 'Não foi possível carregar os horários.');
       setAvailabilityLoaded(false);
     }
@@ -108,19 +112,27 @@ export function BookingFlow() {
   }, []);
 
   useEffect(() => {
-    if (!bookingDates.length) return;
+    if (!bookingDates.length || currentStep === 'confirmation') return;
 
-    const initialRefresh = window.setTimeout(() => void refreshAvailability(), 0);
-    const timer = window.setInterval(() => void refreshAvailability(), 15000);
-    const refreshOnFocus = () => void refreshAvailability();
+    const controller = new AbortController();
+    const refresh = () => void refreshAvailability(controller.signal);
+    const initialRefresh = window.setTimeout(refresh, 0);
+    const timer = window.setInterval(refresh, 30000);
+    const refreshOnFocus = refresh;
+    const refreshOnVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
     window.addEventListener('focus', refreshOnFocus);
+    document.addEventListener('visibilitychange', refreshOnVisibilityChange);
 
     return () => {
+      controller.abort();
       window.clearTimeout(initialRefresh);
       window.clearInterval(timer);
       window.removeEventListener('focus', refreshOnFocus);
+      document.removeEventListener('visibilitychange', refreshOnVisibilityChange);
     };
-  }, [bookingDates.length, refreshAvailability]);
+  }, [bookingDates.length, currentStep, refreshAvailability]);
 
   const handleChange = (field: 'name' | 'phone' | 'notes', value: string) => {
     setForm((current) => ({ ...current, [field]: value }));
